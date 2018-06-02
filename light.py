@@ -32,14 +32,14 @@ sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # flush print output immedi
 OBSERVATION_PLAYERS = "players"
 PLAYER_NAME = 'Lightside'
 BOT_NAME = 'Light'
-
+SECONDS = 15
 
 
 def find_player(players):
     for i in range(len(players)):
         if players[i][u'name'] == PLAYER_NAME:
-            return True
-    return False
+            return (True,players[i])
+    return (False,{})
 
 def get_player(players):
     for i in range(len(players)):
@@ -53,6 +53,9 @@ def get_bot(players):
             return players[i]
     return false
 
+def get_new_bot():
+	return get_bot(json.loads(world_state.observations[-1].text)["players"])
+
 def calculate_distance(bot,player):
     if bot == {} or player == {}:
         return 0
@@ -60,6 +63,91 @@ def calculate_distance(bot,player):
     squaredZ = (math.fabs(bot[u'z'] - player[u'z']))**2
     distance = math.sqrt(squaredX+squaredZ)
     return distance
+
+def follow_player(bot,player,host):
+	if not all(bot) or not all(player):
+		return False
+	move = 0
+	strafe = 0
+	if math.fabs(bot[2] - player[2]) < 2:
+		move = 0
+	elif bot[2] < player[2]:
+		move = 1
+	else:
+		move = -1
+
+	if math.fabs(bot[0] - player[0]) < 2:
+		strafe = 0
+	elif bot[0] > player[0]:
+		strafe = 1
+	else:
+		strafe= -1
+
+	agent_host.sendCommand("move "+str(move))
+	agent_host.sendCommand("strafe "+str(strafe))
+
+def normalise(bot):
+	if bot == {}:
+		"k den"
+		return 0
+
+	delta = 100
+	north = 1
+	west = 1
+	x = bot[u'x']
+	z = bot[u'z']
+	xDec = x%1
+	zDec = z%1
+	xDec = xDec * 1000
+	zDec = zDec * 1000
+
+	if(zDec < 500-delta):
+		north = -(1/(500-delta))*zDec + 1
+	if(zDec > 500+delta):
+		north = -(1/(500-delta))*zDec - 1.5
+	if(zDec>=500-delta and zDec <= 500+delta):
+		north = 0
+
+	if(xDec < 500-delta):
+		west = -(1/(500-delta))*xDec -1.5
+	if(xDec > 500+delta):
+		west = -(1/(500-delta))*xDec + 1
+	if(xDec >= 500-delta and xDec <= 500+delta):
+		west = 0
+
+	north = north*0.1
+	west = west*0.1
+
+	agent_host.sendCommand("move "+str(north))
+	agent_host.sendCommand("strafe "+str(west))
+
+	return (north,west)
+
+
+def step(bot,direction):
+	if bot =={}:
+		return 0
+	north = 0
+	west = 0
+	if direction == "N":
+		north = 0.5
+	if direction == "S":
+		north = -0.5
+	if direction == "W":
+		west = 0.5
+	if direction == "E":
+		west = -0.5
+	agent_host.sendCommand("move "+str(north))
+	agent_host.sendCommand("strafe "+str(west))
+	time.sleep(0.4)
+	agent_host.sendCommand("move 0")
+	agent_host.sendCommand("strafe 0")
+
+
+
+
+
+
 
 def generate_line(block, start_pos,end_pos):
     return '<DrawLine x1="'+str(start_pos[0])+'" y1="'+str(start_pos[1])+'" z1="'+str(start_pos[2])+'" x2="'+str(end_pos[0])+'" y2="'+str(end_pos[1])+'" z2="'+str(end_pos[2])+'" type="'+block+'"/>'
@@ -122,6 +210,10 @@ def generate_bridge():
 
     return toReturn
 
+
+
+
+
 # Create default Malmo objects:
 
 missionXML='''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
@@ -153,7 +245,7 @@ missionXML='''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
                         ''' + generate_borders() + '''
 
                     </DrawingDecorator>
-                    <ServerQuitFromTimeUp timeLimitMs="1"/>
+                    <ServerQuitFromTimeUp timeLimitMs="'''+str(SECONDS*1000)+ '''"/>
                     <ServerQuitWhenAnyAgentFinishes/>
                 </ServerHandlers>
               </ServerSection>
@@ -161,14 +253,15 @@ missionXML='''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
               <AgentSection mode="Survival">
                 <Name>'''+BOT_NAME+'''</Name>
                 <AgentStart>
-                    <Placement x="75" y="152" z="75" yaw="0" />
+                    <Placement x="75.5" y="152.5" z="75.5" yaw="0" />
                 </AgentStart>
                 <AgentHandlers>
+				    <DiscreteMovementCommands/>
+				    <ContinuousMovementCommands/>
                     <ObservationFromNearbyEntities>
                         <Range name="''' + OBSERVATION_PLAYERS+ '''" xrange="10" yrange="10" zrange="10" /> 
                     </ObservationFromNearbyEntities>
                     <ObservationFromFullStats/>
-                    <ContinuousMovementCommands turnSpeedDegs="180"/>
                 </AgentHandlers>
               </AgentSection>
             </Mission>'''
@@ -223,6 +316,9 @@ player_found = False
 agent_player = {}
 agent_bot = {}
 
+state = "chaos"
+
+testForward = False
 
 # Loop until mission ends:
 while world_state.is_mission_running:
@@ -238,11 +334,26 @@ while world_state.is_mission_running:
         if "players" in ob:
             players = ob["players"]
         agent_bot = get_bot(players)
-        player_found = find_player(players)
-    
-    if player_found:
-        agent_player = get_player(players)
+        find_player_result = find_player(players)
+        player_found = find_player_result[0]
+        agent_player = find_player_result[1]
 
+
+    player_xyz = ()
+    bot_xyz = ()
+    if agent_player:
+    	player_xyz = (agent_player[u'x'],agent_player[u'y'],agent_player[u'z'])
+    	bot_xyz = (agent_bot[u'x'],agent_bot[u'y'],agent_bot[u'z'])
+    if player_xyz != ():
+    	follow_player(bot_xyz, player_xyz,agent_host)
+
+    if state == "chaos":
+    	nw = normalise(agent_bot)
+    	if nw == (0,0):
+    		state = "normalised"
+
+    if state == "normalised":
+    	agent_host.sendCommand("jumpwest 10")
 
     for error in world_state.errors:
         print "Error:",error.text
