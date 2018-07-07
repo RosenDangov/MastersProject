@@ -62,15 +62,22 @@ class TabQAgent:
 
     def act(self, world_state, agent_host, current_r ):
         """take 1 action in response to the current world state"""
-        
         obs_text = world_state.observations[0].text
         obs = json.loads(obs_text) # most recent observation
+        grid_cube = obs.get(u'cube3x3x4',0)
+
+
         self.logger.debug(obs)
-        if not u'XPos' in obs or not u'ZPos' in obs:
+        if not u'XPos' in obs or not u'YPos' in obs or not u'ZPos' in obs:
             self.logger.error("Incomplete observation received: %s" % obs_text)
             return 0
-        current_s = "%d:%d" % (int(obs[u'XPos']), int(obs[u'ZPos']))
-        self.logger.debug("State: %s (x = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']), float(obs[u'ZPos'])))
+
+        neighbouring_cubes = "%s:%s:%s:%s" % (grid_cube[10],grid_cube[16],grid_cube[12],grid_cube[14])
+
+        current_s = "%d:%d:%d" % (int(obs[u'XPos']),int(obs[u'YPos']), int(obs[u'ZPos']))
+        current_s += ":" + neighbouring_cubes
+        print "X:Y:Z:N:S:W:E:",current_s
+        self.logger.debug("State: %s (x = %.2f, y = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']),float(obs[u'YPos']), float(obs[u'ZPos'])))
         if not self.q_table.has_key(current_s):
             self.q_table[current_s] = ([0] * len(self.actions))
 
@@ -81,14 +88,32 @@ class TabQAgent:
                 + self.gamma * max(self.q_table[current_s]) - old_q)
 
         # select the next action
-
-
-        grid_cube = obs.get(u'cube3x3x3',0)
         counter_ac = 0
         rewards = self.q_table[current_s]
-        for action in rewards:
-            if grid_cube[12] != "air" and self.actions[counter_ac] == 'movewest 1' and action >= -1:
-                rewards[counter_ac] = -100
+        for action in self.q_table[current_s]:
+            #dont walk into walls
+            if grid_cube[12] != "air" and self.actions[counter_ac] == 'movewest 1':
+                self.q_table[current_s][counter_ac] = -100
+            if grid_cube[10] != "air" and self.actions[counter_ac] == 'movenorth 1':
+                self.q_table[current_s][counter_ac] = -100
+            if grid_cube[14] != "air" and self.actions[counter_ac] == 'moveeast 1':
+                self.q_table[current_s][counter_ac] = -100
+            if grid_cube[16] != "air" and self.actions[counter_ac] == 'movesouth 1':
+                self.q_table[current_s][counter_ac] = -100
+
+            #dont jump pointlessly
+            if grid_cube[12] == "air" and self.actions[counter_ac] == 'jumpwest 1':
+                self.q_table[current_s][counter_ac] = -100
+            if grid_cube[10] == "air" and self.actions[counter_ac] == 'jumpnorth 1':
+                self.q_table[current_s][counter_ac] = -100
+            if grid_cube[14] == "air" and self.actions[counter_ac] == 'jumpeast 1':
+                self.q_table[current_s][counter_ac] = -100
+            if grid_cube[16] == "air" and self.actions[counter_ac] == 'jumpsouth 1':
+                self.q_table[current_s][counter_ac] = -100
+
+            if grid_cube[31] != "air" and 'jump' in self.actions[counter_ac]:
+                self.q_table[current_s][counter_ac] = -100
+
             counter_ac += 1
 
 
@@ -96,29 +121,34 @@ class TabQAgent:
         rnd = random.random()
         if rnd < self.epsilon:
             a = random.randint(0, len(self.actions) - 1)
-            while rewards[a] <= -100:
+            while self.q_table[current_s][a] <= -100:
                 a = random.randint(0, len(self.actions) - 1)
             self.logger.info("Random action: %s" % self.actions[a])
         else:
 
-            m = max(rewards)
+            m = max(self.q_table[current_s])
             # print current_rewards
             self.logger.info("Current values: %s" % ",".join(str(x) for x in self.q_table[current_s]))
 
             l = list()
             for x in range(0, len(self.actions)):
-                if rewards[x] == m:
+                if self.q_table[current_s][x] == m:
                     l.append(x)
-            # remove from list actions that are not available
-            # check for action availability
-            # e.g. moving into a wall
+
 
             y = random.randint(0, len(l)-1)
             a = l[y]
             self.logger.info("Taking q action: %s" % self.actions[a])
 
         # send the selected action
-        agent_host.sendCommand(self.actions[a])
+
+        if "-" in self.actions[a]:
+            args = self.actions[a].split("-")
+            agent_host.sendCommand(args[1])
+            # my_mission.drawBlock(cur_x+1,cur_y,cur_z,"lapis_block")
+        else:
+            agent_host.sendCommand(self.actions[a])
+
         self.prev_s = current_s
         self.prev_a = a
 
@@ -129,7 +159,7 @@ class TabQAgent:
 
         total_reward = 0
         current_r = 0
-        tol = 0.01
+        tol = 0
 
         self.prev_s = None
         self.prev_a = None
@@ -153,22 +183,17 @@ class TabQAgent:
         
         obs = json.loads( world_state.observations[-1].text )
         prev_x = obs[u'XPos']
+        prev_y = obs[u'YPos']
         prev_z = obs[u'ZPos']
-        print 'Initial position:',prev_x,',',prev_z
+        print 'Initial position:',prev_x,',',prev_y,',',prev_z
         
-        if save_images:
-            # save the frame, for debugging
-            frame = world_state.video_frames[-1]
-            image = Image.frombytes('RGB', (frame.width, frame.height), str(frame.pixels) )
-            iFrame = 0
-            self.rep = self.rep + 1
-            image.save( 'rep_' + str(self.rep).zfill(3) + '_saved_frame_' + str(iFrame).zfill(4) + '.png' )
-            
+  
         # take first action
         total_reward += self.act(world_state,agent_host,current_r)
+        time.sleep(0.1)
         
         require_move = True
-        check_expected_position = True
+        check_expected_position = False
         
         # main loop:
         while world_state.is_mission_running:
@@ -183,9 +208,10 @@ class TabQAgent:
                 if len(world_state.rewards) > 0 and not all(e.text=='{}' for e in world_state.observations):
                     obs = json.loads( world_state.observations[-1].text )
                     curr_x = obs[u'XPos']
+                    curr_y = obs[u'YPos']
                     curr_z = obs[u'ZPos']
                     if require_move:
-                        if math.hypot( curr_x - prev_x, curr_z - prev_z ) > tol:
+                        if math.sqrt( math.pow(curr_x - prev_x,2) + math.pow(curr_y - prev_y,2) + math.pow(curr_z - prev_z,2)) >= tol:
                             print 'received.'
                             break
                     else:
@@ -211,14 +237,16 @@ class TabQAgent:
                 frame = world_state.video_frames[-1]
                 obs = json.loads( world_state.observations[-1].text )
                 curr_x = obs[u'XPos']
+                curr_y = obs[u'YPos']
                 curr_z = obs[u'ZPos']
-                print 'New position from observation:',curr_x,',',curr_z,'after action:',self.actions[self.prev_a], #NSWE
+                print 'New check_expected_position from observation:',curr_x,',',curr_z,'after action:',self.actions[self.prev_a], #NSWE
                 if check_expected_position:
-                    expected_x = prev_x + [0,0,-1,1][self.prev_a]
-                    expected_z = prev_z + [-1,1,0,0][self.prev_a]
+                    expected_x = prev_x + [0,0,-1,1,0,0,-1,1,0][self.prev_a]
+                    expected_z = prev_z + [-1,1,0,0,-1,1,0,0,0][self.prev_a]
+                    expected_y = prev_y + [0,0,0,0,1,1,1,1,1,0][self.prev_a]
                     if math.hypot( curr_x - expected_x, curr_z - expected_z ) > tol:
                         print ' - ERROR DETECTED! Expected:',expected_x,',',expected_z
-                        raw_input("Press Enter to continue...")
+                        # raw_input("Press Enter to continue...")
                     else:
                         print 'as expected.'
                     curr_x_from_render = frame.xPos
@@ -226,7 +254,7 @@ class TabQAgent:
                     print 'New position from render:',curr_x_from_render,',',curr_z_from_render,'after action:',self.actions[self.prev_a], #NSWE
                     if math.hypot( curr_x_from_render - expected_x, curr_z_from_render - expected_z ) > tol:
                         print ' - ERROR DETECTED! Expected:',expected_x,',',expected_z
-                        raw_input("Press Enter to continue...")
+                        # raw_input("Press Enter to continue...")
                     else:
                         print 'as expected.'
                 else:
@@ -235,6 +263,7 @@ class TabQAgent:
                 prev_z = curr_z
                 # act
                 total_reward += self.act(world_state, agent_host, current_r)
+                time.sleep(0.1)
                 
         # process final reward
         self.logger.debug("Final reward: %d" % current_r)
@@ -256,7 +285,7 @@ agent_host = MalmoPython.AgentHost()
 
 # add some args
 agent_host.addOptionalStringArgument('mission_file',
-    'Path/to/file from which to load the mission.', 'cliff_walking_1.xml')
+    'Path/to/file from which to load the mission.', 'cliff_crossing.xml')
 agent_host.addOptionalFloatArgument('alpha',
     'Learning rate of the Q-learning agent.', 1)
 agent_host.addOptionalFloatArgument('epsilon',
@@ -265,6 +294,7 @@ agent_host.addOptionalFloatArgument('gamma', 'Discount factor.', 0.9)
 agent_host.addOptionalFlag('load_model', 'Load initial model from model_file.')
 agent_host.addOptionalStringArgument('model_file', 'Path to the initial model file', '')
 agent_host.addOptionalFlag('debug', 'Turn on debugging.')
+# agent_host.addOptionalFlag('lava', 'Turn on random lava holes')
 
 try:
     agent_host.parse( sys.argv )
@@ -289,6 +319,10 @@ for imap in xrange(1):
 
     # -- set up the agent -- #
     actionSet = ["movenorth 1", "movesouth 1", "movewest 1", "moveeast 1"]
+    # actionSet = ["movenorth 1", "movesouth 1", "movewest 1", "moveeast 1",
+    #             "jumpnorth 1","jumpsouth 1","jumpwest 1", "jumpeast 1",
+    #             "jumpuse"]
+    # actionSet = ["drawBlock-jump 2"]
 
     agent = TabQAgent(
         actions=actionSet,
@@ -305,12 +339,13 @@ for imap in xrange(1):
         my_mission = MalmoPython.MissionSpec(mission_xml, True)
     my_mission.removeAllCommandHandlers()
     my_mission.allowAllDiscreteMovementCommands()
-    my_mission.requestVideo( 800,600 )
+    my_mission.requestVideo( 1000,800 )
     my_mission.setViewpoint( 0 )
     # add holes for interest
-    for z in range(2,12,2):
-        x = random.randint(1,3)
-        my_mission.drawBlock( x,45,z,"lava")
+    if agent_host.receivedArgument('lava'):
+        for z in range(2,12,2):
+            x = random.randint(1,3)
+            my_mission.drawBlock( x,45,z,"lava")
 
     my_clients = MalmoPython.ClientPool()
     my_clients.add(MalmoPython.ClientInfo('127.0.0.1', 10000)) # add Minecraft machines here as available
@@ -326,7 +361,6 @@ for imap in xrange(1):
         print "\nMap %d - Mission %d of %d:" % ( imap, i+1, num_repeats )
 
         my_mission_record = MalmoPython.MissionRecordSpec()
-
 
         for retry in range(max_retries):
             try:
@@ -350,11 +384,14 @@ for imap in xrange(1):
         print
 
         # -- run the agent in the world -- #
+
+
         cumulative_reward = agent.run(agent_host)
         print 'Cumulative reward: %d' % cumulative_reward
         cumulative_rewards += [ cumulative_reward ]
 
         # -- clean up -- #
+
         time.sleep(0.5) # (let the Mod reset)
 
     print "Done."

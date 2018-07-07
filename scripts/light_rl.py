@@ -91,6 +91,7 @@ class QLearner:
             for i in range(0, len(self.actions)):
                 if self.q_table[current_state][i] == max_value:
                     max_value_list.append(i)
+            #remove from max_value_list unavailable moves
             max_value_random = random.randint(0, len(max_value_list) -1)
             action = max_value_list[max_value_random]
 
@@ -225,7 +226,7 @@ agent_host.addOptionalFlag('debug', 'Turn on debugging.')
 for imap in xrange(1):
 
     # -- set up the agent -- #
-    actionSet = ["movenorth 1", "movesouth 1", "movewest 1", "moveeast 1"]
+    actionSet = ["jumpnorth 1", "jumpsouth 1", "jumpwest 1", "jumpeast 1"]
 
     agent = QLearner(
         actions=actionSet,
