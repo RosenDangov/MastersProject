@@ -180,6 +180,7 @@ print
 print "Mission running ",
 
 player_found = False
+following_player = False
 agent_player = {}
 agent_bot = {}
 
@@ -199,10 +200,11 @@ while world_state.is_mission_running:
             players = ob["players"]
         agent_bot = get_bot(players)
         player_found = find_player(players)
+        following_player = True
     
     if player_found:
         agent_player = get_player(players)
-
+        print agent_bot
 
 
     for error in world_state.errors:
