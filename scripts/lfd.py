@@ -27,7 +27,17 @@ import json
 import math
 import logging
 import random
+import numpy
 import Tkinter as tk
+
+
+
+
+
+
+
+
+
 
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # flush print output immediately
 
@@ -65,10 +75,10 @@ def get_bot(players):
     for i in range(len(players)):
         if players[i][u'name'] == BOT_NAME:
             return players[i]
-    return false
+    return False
 
-def get_xyz(player):
-    return (player[u'x'],player[u'y'],player[u'z'])
+def get_xyz(bot):
+    return (bot[u'x'],bot[u'y'],bot[u'z'])
 
 def calculate_distance(bot,player):
     if bot == {} or player == {}:
@@ -105,72 +115,37 @@ def check_for_bumps(bot,host):
         corrected_z = int(bot[u'z']) + 0.5
         agent_host.sendCommand("tpz %s" % corrected_z)
 
+def int_xyz(xyz):
+    return (int(xyz[0]),int(xyz[1]),int(xyz[2]))
 
+def process_path(path):
+    optimised_path = []
+    for point in path:
+        if point not in optimised_path:
+            optimised_path.append(point)
+        else:
+            optimised_path = optimised_path[0:optimised_path.index(point)]
+            optimised_path.append(point)
+        print optimised_path
+    return optimised_path
 
-# Create default Malmo objects:
-
-def generateXML(placement_xyz):
-    xml = '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
-            <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-            
-              <About>
-                <Summary>Hello world!</Summary>
-              </About>
-              <ModSettings>
-                <MsPerTick>25</MsPerTick>
-                <PrioritiseOffscreenRendering>false</PrioritiseOffscreenRendering>
-              </ModSettings>
-              <ServerSection>
-                <ServerInitialConditions>
-                    <Time>
-                        <StartTime>12000</StartTime>
-                        <AllowPassageOfTime>false</AllowPassageOfTime>
-                    </Time>
-                    <Weather>clear</Weather>
-                    <AllowSpawning>false</AllowSpawning>
-                </ServerInitialConditions>
-                <ServerHandlers>
-                    <FlatWorldGenerator generatorString="3;7,220*1,5*3,2;3;,biome_2" />
-                    
-                    <DrawingDecorator>
-                        <DrawBlock x="1" y="226" z="15" type="diamond_block"/>
-                    </DrawingDecorator>
-                    <ServerQuitFromTimeUp timeLimitMs="100000"/>
-                    <ServerQuitWhenAnyAgentFinishes/>
-                </ServerHandlers>
-              </ServerSection>
-              
-              <AgentSection mode="Survival">
-                <Name>''' + BOT_NAME + '''</Name>
-                <AgentStart>
-                    <Placement ''' + placement1(placement_xyz) + ''' />
-                </AgentStart>
-                <AgentHandlers>
-                    <ObservationFromNearbyEntities>
-                        <Range name="''' + OBSERVATION_PLAYERS + '''" xrange="25" yrange="10" zrange="25" /> 
-                    </ObservationFromNearbyEntities>
-                    <ObservationFromGrid>
-                        <Grid name="goal_vision">
-                            <min x="-5" y="-5" z="-5"/>
-                            <max x="5" y="5" z="5"/>
-                        </Grid>
-                    </ObservationFromGrid>
-                    <ObservationFromFullStats/>
-                    <DiscreteMovementCommands/>
-                    <ChatCommands/>
-                    <MissionQuitCommands/>
-                    <AbsoluteMovementCommands/>
-                    <ContinuousMovementCommands turnSpeedDegs="180"/>
-                    <AgentQuitFromCollectingItem>
-                        <Item type="stick"/>
-                    </AgentQuitFromCollectingItem>
-                </AgentHandlers>
-              </AgentSection>
-            </Mission>'''
-    return xml
-
-missionXML = generateXML(BOT_XYZ)
-
+def path_to_actions(path):
+    actions = []
+    for i in range(1,len(path)):
+        if(tuple(numpy.subtract(path[i],path[i-1])) == (-1,0,0)):
+            actions.append("movewest 1")
+            continue
+        if(tuple(numpy.subtract(path[i],path[i-1])) == (1,0,0)):
+            actions.append("moveeast 1")
+            continue
+        if(tuple(numpy.subtract(path[i],path[i-1])) == (0,0,1)):
+            actions.append("movesouth 1")
+            continue
+        if(tuple(numpy.subtract(path[i],path[i-1])) == (0,0,-1)):
+            actions.append("movenorth 1")
+            continue
+    print actions
+    return actions
 
 
 
@@ -186,8 +161,18 @@ if agent_host.receivedArgument("help"):
     print agent_host.getUsage()
     exit(0)
 
-my_mission = MalmoPython.MissionSpec(missionXML,True)
+
+
+mission_file = "cliff_climbing_lfd.xml"
+with open(mission_file, 'r') as f:
+    print "Loading mission from %s" % mission_file
+    mission_xml = f.read()
+    my_mission = MalmoPython.MissionSpec(mission_xml, True)
 my_mission_record = MalmoPython.MissionRecordSpec()
+
+
+
+
 
 # Attempt to start a mission:
 max_retries = 3
@@ -227,6 +212,13 @@ agent_player = {}
 agent_bot = {}
 
 
+start = (4,46,1)
+goal = (1,46,2)
+player_history = [(0,0,0)]
+player_table = {}
+learning = True
+
+
 # Loop until mission ends:
 while world_state.is_mission_running:
 
@@ -242,37 +234,52 @@ while world_state.is_mission_running:
             players = ob["players"]
         agent_bot = get_bot(players)
         player_found = find_player(players)
+        if player_found:
+            agent_player = get_player(players)
+
+    if learning and player_found:
+        moved = True
+        step = tuple(numpy.subtract(int_xyz(get_xyz(agent_player)), start))
+        if step == player_history[-1]:
+            moved = False
+            if step == tuple(numpy.subtract(goal, start)):
+                learning = False
+                print "Path learned"
+                player_history = process_path(player_history)
+                actions = path_to_actions(player_history)
+        if moved:
+            player_history.append(step)
+            print player_history
 
 
+    #     goal_vision = []
+    #     if "goal_vision" in ob:
+    #         goal_vision = ob["goal_vision"]
+    #     goal_found = find_goal(goal_vision)
 
-        goal_vision = []
-        if "goal_vision" in ob:
-            goal_vision = ob["goal_vision"]
-        goal_found = find_goal(goal_vision)
-
-        if goal_found and not following_player and not busy:
-            following_player = False
-            agent_host.sendCommand("quit")
-            time.sleep(0.2)
-            my_mission = MalmoPython.MissionSpec(generateXML(get_xyz(agent_bot)),True)
-            my_mission_record = MalmoPython.MissionRecordSpec()
-            agent_host.startMission(my_mission,my_mission_record)
-            time.sleep(1)
-            busy = True
+    #     if goal_found and not following_player and not busy:
+    #         following_player = False
+    #         agent_host.sendCommand("quit")
+    #         time.sleep(0.2)
+    #         my_mission = MalmoPython.MissionSpec(generateXML(get_xyz(agent_bot)),True)
+    #         my_mission_record = MalmoPython.MissionRecordSpec()
+    #         agent_host.startMission(my_mission,my_mission_record)
+    #         time.sleep(1)
+    #         busy = True
 
     
-    if following_player:
-        agent_player = get_player(players)
-        if following_player:
-            follow_player(agent_bot,agent_player,agent_host)
-        check_for_bumps(agent_bot,agent_host)
-        time.sleep(0.1)
+    # if following_player:
+    #     agent_player = get_player(players)
+    #     if following_player:
+    #         follow_player(agent_bot,agent_player,agent_host)
+    #     check_for_bumps(agent_bot,agent_host)
+    #     time.sleep(0.1)
 
-    if not following_player and not busy:
-        agent_host.sendCommand("movesouth 1")
+    # if not following_player and not busy:
+    #     agent_host.sendCommand("movesouth 1")
 
-    if busy:
-        agent_host.sendCommand("jump 1")
+    # if busy:
+    #     agent_host.sendCommand("jump 1")
 
 
     for error in world_state.errors:

@@ -59,6 +59,9 @@ class TabQAgent:
         
         self.rep = 0
 
+    def update_table(new_table):
+        self.q_table.update(new_table)
+
 
     def act(self, world_state, agent_host, current_r ):
         """take 1 action in response to the current world state"""
