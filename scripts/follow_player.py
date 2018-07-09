@@ -25,6 +25,9 @@ import sys
 import time
 import json
 import math
+import logging
+import random
+import Tkinter as tk
 
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # flush print output immediately
 
@@ -36,12 +39,21 @@ PLAYER_NAME = 'Lightside'
 BOT_NAME = 'Light'
 
 
+def placement3(x,y,z):
+    return 'x="%s" y="%s" z="%s" yaw="0"' % (str(x),str(y),str(z))
+def placement1(xyz):
+    return 'x="%s" y="%s" z="%s" yaw="0"' % (str(xyz[0]),str(xyz[1]),str(xyz[2]))
+
+BOT_XYZ = (0.5,227,0.5)
 
 def find_player(players):
     for i in range(len(players)):
         if players[i][u'name'] == PLAYER_NAME:
             return True
     return False
+
+def find_goal(grid):
+    return u'diamond_block' in grid
 
 def get_player(players):
     for i in range(len(players)):
@@ -55,6 +67,9 @@ def get_bot(players):
             return players[i]
     return false
 
+def get_bot_xyz(bot):
+    return (bot[u'x'],bot[u'y'],bot[u'z'])
+
 def calculate_distance(bot,player):
     if bot == {} or player == {}:
         return 0
@@ -63,75 +78,99 @@ def calculate_distance(bot,player):
     distance = math.sqrt(squaredX+squaredZ)
     return distance
 
+def follow_player(bot,player,host):
+    direction = ""
+
+    if bot[u'x'] - player[u'x'] > 1.5:
+        direction = "west"
+    if bot[u'x'] - player[u'x'] < -1.5:
+        direction = "east"
+    if bot[u'z'] - player[u'z'] > 1.5:
+        direction = "north"
+    if bot[u'z'] - player[u'z'] < -1.5:
+        direction = "south"
+    if bot[u'y'] == player[u'y']:
+        move = "move"
+    else:
+        move = "jump"
+    if direction == "":
+        return
+    host.sendCommand("%s%s 1" % (move, direction))
+
+def check_for_bumps(bot,host):
+    if bot[u'x'] % 1 != 0.5:
+        corrected_x = int(bot[u'x']) + 0.5
+        agent_host.sendCommand("tpx %s" % corrected_x)
+    if bot[u'z'] % 1 != 0.5:
+        corrected_z = int(bot[u'z']) + 0.5
+        agent_host.sendCommand("tpz %s" % corrected_z)
 
 
-
-
-def calculate_angle(bot, player):
-    if bot == {} or player == {}:
-        return 0
-    yaw = bot[u'yaw']%360
-    distance = calculate_distance(bot,player)
-    b = math.fabs(bot[u'z'] - player[u'z'])
-    a = math.fabs(bot[u'x'] - player[u'x'])
-
-    sinNewYaw = a/distance
-    cosNewYaw = b/distance
-
-    sinTheta = math.sin(math.radians(180-yaw))
-    cosTheta = math.cos(math.radians(180-yaw))
-    phi = math.acos((-a*sinTheta-b*cosTheta)/distance)
-    print math.degrees(phi)
-
-
-    # tanBetta = a/b
-    # cosBetta = b/distance
-    # bettaR = math.atan(tanBetta)
-    # bettaD = math.degrees(bettaR)
-    # alpha = bot[u'yaw']%360 - bettaD
-    # return alpha
 
 # Create default Malmo objects:
 
-missionXML='''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+def generateXML(placement_xyz):
+    xml = '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
             <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             
               <About>
                 <Summary>Hello world!</Summary>
               </About>
-              
+              <ModSettings>
+                <MsPerTick>25</MsPerTick>
+                <PrioritiseOffscreenRendering>false</PrioritiseOffscreenRendering>
+              </ModSettings>
               <ServerSection>
                 <ServerInitialConditions>
                     <Time>
                         <StartTime>12000</StartTime>
                         <AllowPassageOfTime>false</AllowPassageOfTime>
                     </Time>
-                    <Weather>rain</Weather>
+                    <Weather>clear</Weather>
+                    <AllowSpawning>false</AllowSpawning>
                 </ServerInitialConditions>
                 <ServerHandlers>
                     <FlatWorldGenerator generatorString="3;7,220*1,5*3,2;3;,biome_2" />
+                    
                     <DrawingDecorator>
-                        <DrawCuboid x1="-50" z1="-50" y1="150" x2="50" z2="50" y2="250" type="air"/>
+                        <DrawBlock x="1" y="226" z="15" type="diamond_block"/>
                     </DrawingDecorator>
-                    <ServerQuitFromTimeUp timeLimitMs="10000"/>
+                    <ServerQuitFromTimeUp timeLimitMs="100000"/>
                     <ServerQuitWhenAnyAgentFinishes/>
                 </ServerHandlers>
               </ServerSection>
               
               <AgentSection mode="Survival">
-                <Name>'''+BOT_NAME+'''</Name>
+                <Name>''' + BOT_NAME + '''</Name>
                 <AgentStart>
-                    <Placement x="0" y="152" z="0" yaw="0" />
+                    <Placement ''' + placement1(placement_xyz) + ''' />
                 </AgentStart>
                 <AgentHandlers>
                     <ObservationFromNearbyEntities>
-                        <Range name="''' + OBSERVATION_PLAYERS+ '''" xrange="10" yrange="10" zrange="10" /> 
+                        <Range name="''' + OBSERVATION_PLAYERS + '''" xrange="25" yrange="10" zrange="25" /> 
                     </ObservationFromNearbyEntities>
+                    <ObservationFromGrid>
+                        <Grid name="goal_vision">
+                            <min x="-5" y="-5" z="-5"/>
+                            <max x="5" y="5" z="5"/>
+                        </Grid>
+                    </ObservationFromGrid>
                     <ObservationFromFullStats/>
+                    <DiscreteMovementCommands/>
+                    <ChatCommands/>
+                    <MissionQuitCommands/>
+                    <AbsoluteMovementCommands/>
                     <ContinuousMovementCommands turnSpeedDegs="180"/>
+                    <AgentQuitFromCollectingItem>
+                        <Item type="stick"/>
+                    </AgentQuitFromCollectingItem>
                 </AgentHandlers>
               </AgentSection>
             </Mission>'''
+    return xml
+
+missionXML = generateXML(BOT_XYZ)
+
 
 
 
@@ -181,6 +220,9 @@ print "Mission running ",
 
 player_found = False
 following_player = False
+learning = False
+playing = False
+busy = False
 agent_player = {}
 agent_bot = {}
 
@@ -200,11 +242,37 @@ while world_state.is_mission_running:
             players = ob["players"]
         agent_bot = get_bot(players)
         player_found = find_player(players)
-        following_player = True
+
+
+
+        goal_vision = []
+        if "goal_vision" in ob:
+            goal_vision = ob["goal_vision"]
+        goal_found = find_goal(goal_vision)
+
+        if goal_found and not following_player and not busy:
+            following_player = False
+            agent_host.sendCommand("quit")
+            time.sleep(0.2)
+            my_mission = MalmoPython.MissionSpec(generateXML(get_bot_xyz(agent_bot)),True)
+            my_mission_record = MalmoPython.MissionRecordSpec()
+            agent_host.startMission(my_mission,my_mission_record)
+            time.sleep(1)
+            busy = True
+
     
-    if player_found:
+    if following_player:
         agent_player = get_player(players)
-        print agent_bot
+        if following_player:
+            follow_player(agent_bot,agent_player,agent_host)
+        check_for_bumps(agent_bot,agent_host)
+        time.sleep(0.1)
+
+    if not following_player and not busy:
+        agent_host.sendCommand("movesouth 1")
+
+    if busy:
+        agent_host.sendCommand("jump 1")
 
 
     for error in world_state.errors:
