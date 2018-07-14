@@ -118,6 +118,9 @@ def check_for_bumps(bot,host):
 def int_xyz(xyz):
     return (int(xyz[0]),int(xyz[1]),int(xyz[2]))
 
+
+
+
 def process_path(path):
     optimised_path = []
     for point in path:
@@ -149,6 +152,63 @@ def path_to_actions(path):
 
 
 
+def _3d_point_to_int(xyz):
+    dim = 11
+    return xyz[0] + dim*dim*xyz[1] + dim*xyz[2]
+
+
+
+def state_actions_fd(bot,player,path,actions,start,goal,observation):
+    # start and goal are absolute positions
+    # bot and player are absolute positions
+    # path contains relative position
+    # observation contains 11x11x11 around bot
+    if bot == {} or player == {}:
+        return
+    player_table = {}
+    for i in range(0,len(path)-1):
+        # state: [Xdist,Ydist,Zdist,NSblock,WEblock]
+        x_dist = abs(path[i][0]+start[0] - goal[0])
+        y_dist = abs(path[i][1]+start[1] - goal[1])
+        z_dist = abs(path[i][2]+start[2] - goal[2])
+
+
+        #tuple distance between chars + 5
+        observation_tuple = (5+path[i][0]+start[0]-int(bot[u'x']),5+path[i][1]+start[1]-int(bot[u'y']),5+path[i][2]+start[2]-int(bot[u'z']))
+
+
+        if path[i][2]+start[2] - goal[2] > 0:
+            block_tuple = tuple(numpy.add(observation_tuple,(0,0,-1)))
+            print _3d_point_to_int(block_tuple), block_tuple, "north"
+            ns_block = observation[_3d_point_to_int(block_tuple)]
+        elif path[i][2]+start[2] - goal[2] == 0:
+            ns_block = "none"
+        else:
+            block_tuple = tuple(numpy.add(observation_tuple,(0,0,1)))
+            print _3d_point_to_int(block_tuple), block_tuple, "south"
+            ns_block = observation[_3d_point_to_int(block_tuple)]
+        if path[i][0]+start[0] - goal[0] > 0:
+            block_tuple = tuple(numpy.add(observation_tuple,(-1,0,0)))
+            print _3d_point_to_int(block_tuple), block_tuple, "west"
+            we_block = observation[_3d_point_to_int(block_tuple)]
+        elif path[i][0]+start[0] - goal[0] == 0:
+            we_block = "none"
+        else:
+            block_tuple = tuple(numpy.add(observation_tuple,(1,0,0)))
+            print _3d_point_to_int(block_tuple), block_tuple, "east"
+            we_block = observation[_3d_point_to_int(block_tuple)]
+
+        print x_dist,y_dist,z_dist,ns_block,we_block
+
+
+
+
+
+
+
+
+
+
 
 agent_host = MalmoPython.AgentHost()
 try:
@@ -169,9 +229,6 @@ with open(mission_file, 'r') as f:
     mission_xml = f.read()
     my_mission = MalmoPython.MissionSpec(mission_xml, True)
 my_mission_record = MalmoPython.MissionRecordSpec()
-
-
-
 
 
 # Attempt to start a mission:
@@ -222,16 +279,23 @@ learning = True
 # Loop until mission ends:
 while world_state.is_mission_running:
 
-
     world_state = agent_host.getWorldState()
     time.sleep(0.1)
     if world_state.number_of_observations_since_last_state > 0:
+
+
         msg = world_state.observations[-1].text
         ob = json.loads(msg)
 
         players = []
+        obs_learning_area = []
         if "players" in ob:
             players = ob["players"]
+        if "learning_area" in ob:
+            obs_learning_area = ob["learning_area"]
+            # for i in range(1331):
+            #     if obs_learning_area[i] == "gold_ore":
+            #         print i
         agent_bot = get_bot(players)
         player_found = find_player(players)
         if player_found:
@@ -247,9 +311,12 @@ while world_state.is_mission_running:
                 print "Path learned"
                 player_history = process_path(player_history)
                 actions = path_to_actions(player_history)
+                player_table = (state_actions_fd(agent_bot,agent_player,player_history,actions,start,goal,obs_learning_area))
         if moved:
             player_history.append(step)
             print player_history
+
+
 
 
     #     goal_vision = []

@@ -29,6 +29,7 @@
         <DrawCuboid x1="4"  y1="45" z1="3"  x2="1" y2="47" z2="4" type="sandstone" /> <!-- cliff -->
         <DrawBlock   x="4"   y="45"  z="1"  type="cobblestone" />                           <!-- the starting marker -->
         <DrawBlock x="5"   y="45"  z="1"  type="gold_ore"/> <!-- the observation marker -->
+        <DrawBlock x="3"   y="46"  z="2"  type="gold_ore"/>
         <DrawBlock   x="1"   y="47"  z="4" type="lapis_block" />                           <!-- the destination marker -->
         <DrawItem    x="4"   y="46"  z="12" type="diamond" />                               <!-- another destination marker -->
       </DrawingDecorator>
@@ -50,6 +51,10 @@
           <Grid name="cube3x3x4">
             <min x="-1" y="-1" z="-1"/>
             <max x="1" y="2" z="1"/>
+          </Grid>
+          <Grid name ="learning_area">
+            <min x="-5" y="-5" z="-5"/>
+            <max x="5" y="5" z="5"/>
           </Grid>
       </ObservationFromGrid>
       <ObservationFromNearbyEntities>
