@@ -29,7 +29,7 @@ import logging
 import random
 import numpy
 import Tkinter as tk
-
+import ast # for string to dictionary
 
 
 
@@ -47,6 +47,9 @@ ARENA_BREADTH = 60
 OBSERVATION_PLAYERS = "players"
 PLAYER_NAME = 'Lightside'
 BOT_NAME = 'Light'
+actionSet = ["movenorth 1", "movesouth 1", "movewest 1", "moveeast 1",
+            "jumpnorth 1","jumpsouth 1","jumpwest 1", "jumpeast 1",
+            "jumpuse"]
 
 
 def placement3(x,y,z):
@@ -133,22 +136,48 @@ def process_path(path):
     return optimised_path
 
 def path_to_actions(path):
+    path_actions = {}
     actions = []
+    skips = []
     for i in range(1,len(path)):
+        if i in skips:
+            continue
+        print i, path[i], path[i-1]
         if(tuple(numpy.subtract(path[i],path[i-1])) == (-1,0,0)):
+            path_actions[path[i-1]] = "movewest 1"
             actions.append("movewest 1")
-            continue
         if(tuple(numpy.subtract(path[i],path[i-1])) == (1,0,0)):
+            path_actions[path[i-1]] = "moveeast 1"
             actions.append("moveeast 1")
-            continue
         if(tuple(numpy.subtract(path[i],path[i-1])) == (0,0,1)):
+            path_actions[path[i-1]] = "movesouth 1"
             actions.append("movesouth 1")
-            continue
         if(tuple(numpy.subtract(path[i],path[i-1])) == (0,0,-1)):
+            path_actions[path[i-1]] = "movenorth 1"
             actions.append("movenorth 1")
-            continue
-    print actions
-    return actions
+
+        if(tuple(numpy.subtract(path[i],path[i-1])) == (0,1,0)):
+            if(tuple(numpy.subtract(path[i+1],path[i])) == (0,1,0)):
+                path_actions[path[i-1]] = "jumpuse"
+                actions.append("jumpuse")
+                continue
+
+            if(tuple(numpy.subtract(path[i+1],path[i])) == (-1,0,0)):
+                path_actions[path[i-1]] = "jumpwest 1"
+                actions.append("jumpwest 1")
+            if(tuple(numpy.subtract(path[i+1],path[i])) == (1,0,0)):
+                path_actions[path[i-1]] = "jumpeast 1"
+                actions.append("jumpeast 1")
+            if(tuple(numpy.subtract(path[i+1],path[i])) == (0,0,1)):
+                path_actions[path[i-1]] = "jumpsouth 1"
+                actions.append("jumpsouth 1")
+            if(tuple(numpy.subtract(path[i+1],path[i])) == (0,0,-1)):
+                path_actions[path[i-1]] = "jumpnorth 1"
+                actions.append("jumpnorth 1")
+            skips.append(i+1)
+
+
+    return path_actions
 
 
 
@@ -165,42 +194,109 @@ def state_actions_fd(bot,player,path,actions,start,goal,observation):
     # observation contains 11x11x11 around bot
     if bot == {} or player == {}:
         return
-    player_table = {}
-    for i in range(0,len(path)-1):
-        # state: [Xdist,Ydist,Zdist,NSblock,WEblock]
-        x_dist = abs(path[i][0]+start[0] - goal[0])
-        y_dist = abs(path[i][1]+start[1] - goal[1])
-        z_dist = abs(path[i][2]+start[2] - goal[2])
+    player_table_lfd = {}
+    player_table_rl = {}
 
-
+    for pos in actions:
+        x_dist = abs(pos[0]+start[0] - goal[0])
+        y_dist = abs(pos[1]+start[1] - goal[1])
+        z_dist = abs(pos[2]+start[2] - goal[2])
         #tuple distance between chars + 5
-        observation_tuple = (5+path[i][0]+start[0]-int(bot[u'x']),5+path[i][1]+start[1]-int(bot[u'y']),5+path[i][2]+start[2]-int(bot[u'z']))
+        observation_tuple = (5+pos[0]+start[0]-int(bot[u'x']),5+pos[1]+start[1]-int(bot[u'y']),5+pos[2]+start[2]-int(bot[u'z']))
 
 
-        if path[i][2]+start[2] - goal[2] > 0:
+        if pos[2]+start[2] - goal[2] > 0:
             block_tuple = tuple(numpy.add(observation_tuple,(0,0,-1)))
             print _3d_point_to_int(block_tuple), block_tuple, "north"
             ns_block = observation[_3d_point_to_int(block_tuple)]
-        elif path[i][2]+start[2] - goal[2] == 0:
+            if ns_block != "air":
+                ns_block = "solid"
+        elif pos[2]+start[2] - goal[2] == 0:
             ns_block = "none"
         else:
             block_tuple = tuple(numpy.add(observation_tuple,(0,0,1)))
             print _3d_point_to_int(block_tuple), block_tuple, "south"
             ns_block = observation[_3d_point_to_int(block_tuple)]
-        if path[i][0]+start[0] - goal[0] > 0:
+            if ns_block != "air":
+                ns_block = "solid"
+
+        if  pos[0]+start[0] - goal[0] > 0:
             block_tuple = tuple(numpy.add(observation_tuple,(-1,0,0)))
             print _3d_point_to_int(block_tuple), block_tuple, "west"
             we_block = observation[_3d_point_to_int(block_tuple)]
-        elif path[i][0]+start[0] - goal[0] == 0:
+            if we_block != "air":
+                we_block = "solid"
+        elif pos[0]+start[0] - goal[0] == 0:
             we_block = "none"
         else:
             block_tuple = tuple(numpy.add(observation_tuple,(1,0,0)))
             print _3d_point_to_int(block_tuple), block_tuple, "east"
             we_block = observation[_3d_point_to_int(block_tuple)]
+            if we_block != "air":
+                we_block = "solid"
 
-        print x_dist,y_dist,z_dist,ns_block,we_block
+        action_rewards = [0]*9
+        action_rewards[actionSet.index(actions[pos])] = 50
 
 
+        player_table_lfd.update({"%s:%s:%s:%s:%s" % (x_dist,y_dist,z_dist,ns_block,we_block) :action_rewards})
+    print player_table_lfd
+    return player_table_lfd
+
+
+def update_qtable(old_table,new_table):
+    for state in new_table:
+        if state in old_table:
+            old_rewards = old_table[state]
+            new_rewards = new_table[state]
+            for i in range(len(old_rewards)):
+                old_rewards[i] = (old_rewards[i] + new_rewards[i])/2
+                old_table[state] = old_rewards
+        else:
+            old_table[state] = new_table[state]
+    return old_table
+
+
+
+
+    # for i in range(0,len(path)-1):
+    #     # state: [Xdist,Ydist,Zdist,NSblock,WEblock]
+    #     x_dist = abs(path[i][0]+start[0] - goal[0])
+    #     y_dist = abs(path[i][1]+start[1] - goal[1])
+    #     z_dist = abs(path[i][2]+start[2] - goal[2])
+
+
+    #     #tuple distance between chars + 5
+    #     observation_tuple = (5+path[i][0]+start[0]-int(bot[u'x']),5+path[i][1]+start[1]-int(bot[u'y']),5+path[i][2]+start[2]-int(bot[u'z']))
+
+
+    #     if path[i][2]+start[2] - goal[2] > 0:
+    #         block_tuple = tuple(numpy.add(observation_tuple,(0,0,-1)))
+    #         print _3d_point_to_int(block_tuple), block_tuple, "north"
+    #         ns_block = observation[_3d_point_to_int(block_tuple)]
+    #     elif path[i][2]+start[2] - goal[2] == 0:
+    #         ns_block = "none"
+    #     else:
+    #         block_tuple = tuple(numpy.add(observation_tuple,(0,0,1)))
+    #         print _3d_point_to_int(block_tuple), block_tuple, "south"
+    #         ns_block = observation[_3d_point_to_int(block_tuple)]
+    #     if path[i][0]+start[0] - goal[0] > 0:
+    #         block_tuple = tuple(numpy.add(observation_tuple,(-1,0,0)))
+    #         print _3d_point_to_int(block_tuple), block_tuple, "west"
+    #         we_block = observation[_3d_point_to_int(block_tuple)]
+    #     elif path[i][0]+start[0] - goal[0] == 0:
+    #         we_block = "none"
+    #     else:
+    #         block_tuple = tuple(numpy.add(observation_tuple,(1,0,0)))
+    #         print _3d_point_to_int(block_tuple), block_tuple, "east"
+    #         we_block = observation[_3d_point_to_int(block_tuple)]
+
+    #     actions_rewards = [0]*9
+    #     action_rewards[actionSet.index("")]
+
+
+    #     player_table_lfd.update({"%s:%s:%s:%s:%s" % (str(x_dist),y_dist,z_dist,ns_block,we_block) :50})
+    # print player_table_lfd
 
 
 
@@ -272,8 +368,11 @@ agent_bot = {}
 start = (4,46,1)
 goal = (1,46,2)
 player_history = [(0,0,0)]
-player_table = {}
+player_table_lfd = {}
+player_table_rl = {}
 learning = True
+end_mission = False
+actions = []
 
 
 # Loop until mission ends:
@@ -310,15 +409,33 @@ while world_state.is_mission_running:
                 learning = False
                 print "Path learned"
                 player_history = process_path(player_history)
-                actions = path_to_actions(player_history)
-                player_table = (state_actions_fd(agent_bot,agent_player,player_history,actions,start,goal,obs_learning_area))
+                path_actions = path_to_actions(player_history)
+                player_table = (state_actions_fd(agent_bot,agent_player,player_history,path_actions,start,goal,obs_learning_area))
+                table_string = ""
+                table = {}
+                with open('lfd.txt', 'r') as myfile:
+                    table_string=myfile.read()
+                if table_string != "":
+                    table = ast.literal_eval(table_string)
+                table = update_qtable(table,player_table)
+
+                f = open("lfd.txt","w")
+                f.write(str(table) )
+                f.close()
         if moved:
             player_history.append(step)
             print player_history
 
+    # if len(actions)>0:
+    #     agent_host.sendCommand("movewest 1")
+    #     time.sleep(0.2)
+    #     for i in range(len(actions)):
+    #         agent_host.sendCommand(actions[i])
+    #         time.sleep(0.3)
+    #     end_mission = True
 
-
-
+    # if end_mission:
+    #     agent_host.sendCommand("quit")
     #     goal_vision = []
     #     if "goal_vision" in ob:
     #         goal_vision = ob["goal_vision"]

@@ -321,10 +321,10 @@ else:
 for imap in xrange(1):
 
     # -- set up the agent -- #
-    actionSet = ["movenorth 1", "movesouth 1", "movewest 1", "moveeast 1"]
-    # actionSet = ["movenorth 1", "movesouth 1", "movewest 1", "moveeast 1",
-    #             "jumpnorth 1","jumpsouth 1","jumpwest 1", "jumpeast 1",
-    #             "jumpuse"]
+    # actionSet = ["movenorth 1", "movesouth 1", "movewest 1", "moveeast 1"]
+    actionSet = ["movenorth 1", "movesouth 1", "movewest 1", "moveeast 1",
+                "jumpnorth 1","jumpsouth 1","jumpwest 1", "jumpeast 1",
+                "jumpuse"]
     # actionSet = ["drawBlock-jump 2"]
 
     agent = TabQAgent(

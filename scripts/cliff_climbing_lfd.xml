@@ -6,7 +6,7 @@
   </About>
   
   <ModSettings>
-    <MsPerTick>25</MsPerTick>
+    <MsPerTick>50</MsPerTick>
   </ModSettings>
 
   <ServerSection>
@@ -30,7 +30,7 @@
         <DrawBlock   x="4"   y="45"  z="1"  type="cobblestone" />                           <!-- the starting marker -->
         <DrawBlock x="5"   y="45"  z="1"  type="gold_ore"/> <!-- the observation marker -->
         <DrawBlock x="3"   y="46"  z="2"  type="gold_ore"/>
-        <DrawBlock   x="1"   y="47"  z="4" type="lapis_block" />                           <!-- the destination marker -->
+        <DrawBlock   x="0"   y="45"  z="6" type="lapis_block" />                           <!-- the destination marker -->
         <DrawItem    x="4"   y="46"  z="12" type="diamond" />                               <!-- another destination marker -->
       </DrawingDecorator>
       <ServerQuitWhenAnyAgentFinishes/>
@@ -65,6 +65,8 @@
             <command>attack</command>
           </ModifierList>
       </DiscreteMovementCommands>
+      <ChatCommands/>
+      <MissionQuitCommands/>
       <RewardForTouchingBlockType>
         <Block reward="-100.0" type="lava" behaviour="onceOnly"/>
         <Block reward="100.0" type="lapis_block" behaviour="onceOnly"/>
